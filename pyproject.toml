@@ -1,0 +1,256 @@
+[build-system]
+build-backend = "hatchling.build"
+requires = [ "hatchling>=1.27" ]
+
+
+[project]
+name = "django-centrifugo"
+version = "0.0.1"
+description = "Django lib for integration centrifugo"
+readme = "README.md"
+license = "MIT"
+license-files = [ "LICENSE" ]
+requires-python = ">=3.12"
+classifiers = [
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Programming Language :: Python :: 3.15",
+]
+dependencies = [
+  "asgiref>=3.8.1,<4",
+  "cent>=6,<7",
+  "django>=5.2,<5.3",
+  "django-typer>=4,<5",
+  "grpcio>=1.81.1,<2",
+  "grpcio-health-checking>=1.81.1,<2",
+  "msgspec>=0.22",
+  "protobuf>=6.33.5,<7",
+  "rich>=14,<16",
+  "typer>=0.27,<1",
+]
+
+[project.optional-dependencies]
+pydantic = [ "pydantic>=2.12,<3" ]
+
+
+[dependency-groups]
+dev = [
+  { include-group = "docs" },
+  { include-group = "lint" },
+  { include-group = "release" },
+  { include-group = "test" },
+  { include-group = "typing" },
+]
+test = [
+  "grpcio-tools==1.81.1",
+  "httpx2>=2.16",
+  "pytest>=9.1.1",
+  "pytest-cov>=7",
+  "pytest-django",
+  "pytest-randomly>=5",
+  "pytest-sugar>=1.1.1",
+  "pytest-xdist>=3.8",
+]
+docs = [
+  "docutils>=0.22,<0.23",
+  "myst-parser>=5,<6",
+  "shibuya>=2026.1,<2027",
+  "sphinx>=9,<10",
+  "sphinx-autodoc-typehints>=3,<4",
+  "sphinx-contributors>=0.2,<0.4",
+  "sphinx-copybutton>=0.5,<0.6",
+  "sphinx-design>=0.7,<0.8",
+  "sphinx-iconify>=0.3,<0.4",
+  "sphinx-llm-friendly>=0.5,<0.8",
+  "sphinx-tabs>=3.5,<4",
+  "sphinxcontrib-mermaid>=2,<3",
+]
+lint = [
+  "deptry>=0.25.1,<0.26",
+  "django-upgrade>=1.33",
+  "ruff>=0.17.4",
+]
+release = [
+  "bump-my-version>=1.8.1",
+]
+typing = [
+  "django-stubs[compatible-mypy]",
+  "mypy>=2.4.1",
+  "pyright[nodejs]>=1.1.412",
+]
+
+
+[tool.hatch.build]
+targets.wheel.packages = [ "django_centrifugo" ]
+targets.sdist.include = [ "django_centrifugo" ]
+
+
+[tool.ruff]
+line-length = 120
+extend-exclude = [ "django_centrifugo/_proto/*_pb2*.py", "django_centrifugo/_proto/*_pb2*.pyi" ]
+
+[tool.ruff.format]
+docstring-code-line-length = 88
+docstring-code-format = true
+
+[tool.ruff.lint]
+select = [ "ALL" ]
+ignore = [
+  "A003",    # flake8-builtins - class attribute {name} is shadowing a python builtin
+  "ANN401",  # flake8-annotations - Dynamically typed expressions (typing.Any) are disallowed
+  "B010",    # flake8-bugbear - do not call setattr with a constant attribute value
+  "COM812",  # conflict with formatter
+  "CPY001",  # missing-copyright-notice
+  "D100",    # pydocstyle - missing docstring in public module
+  "D101",    # pydocstyle - missing docstring in public class
+  "D102",    # pydocstyle - missing docstring in public method
+  "D103",    # pydocstyle - missing docstring in public function
+  "D104",    # pydocstyle - missing docstring in public package
+  "D105",    # pydocstyle - missing docstring in magic method
+  "D106",    # pydocstyle - missing docstring in public nested class
+  "D107",    # pydocstyle - missing docstring in __init__
+  "D202",    # pydocstyle - no blank lines allowed after function docstring
+  "D205",    # pydocstyle - 1 blank line required between summary line and description
+  "D212",    # Checks for docstring summary lines that are not positioned on the first physical line of the docstring.
+  "D415",    # pydocstyle - first line should end with a period, question mark, or exclamation point
+  "E501",    # pycodestyle line too long, handled by black
+  "FBT001",  # flake8-boolean-trap - Boolean-typed positional argument in function definition
+  "FBT002",  # flake8-boolean-trap - Boolean default positional argument in function definition
+  "ISC001",  # conflict with formatter
+  "N818",    # pep8-naming - exception name should be named with an Error suffix
+  "PLR0913", # Too many arguments in function definition
+  "RUF001",  # String contains ambiguous
+  "RUF002",  # ambiguous-unicode-character-docstring
+  "RUF003",  # comment contains ambiguous
+  "S311",    # flake8-bandit - Standard pseudo-random generators are not suitable for security/cryptographic purposes
+  "UP037",   # pyupgrade - removes quotes from type annotation
+  "UP040",   # pyupgrade - non-pep695-type-alias
+  "UP046",   # pyupgrade - Generic class `*` uses `*` subclass instead of type parameters
+]
+per-file-ignores."tests/**/*.*" = [
+  "A",
+  "ANN",
+  "ARG",
+  "ARG002",  # Investigate @guacs
+  "B",
+  "BLE",
+  "C901",
+  "D",
+  "DTZ",
+  "EM",
+  "FA",
+  "FBT",
+  "FBT",
+  "FIX",
+  "G",
+  "INP",
+  "N",
+  "PERF203", # Investigate @guacs
+  "PGH",
+  "PIE",
+  "PLR",
+  "PLR0913", # too many arguments
+  "PLW",
+  "PT",
+  "PT",
+  "PTH",
+  "RSE",
+  "RUF012",
+  "S",
+  "S101",
+  "SIM",
+  "SLF",
+  "TC",
+  "TD",
+  "TRY",
+]
+flake8-builtins.builtins-allowed-modules = [ "types" ]
+isort.combine-as-imports = true
+isort.force-single-line = false
+isort.known-third-party = [ "django" ]
+isort.lines-after-imports = 2
+isort.section-order = [ "future", "standard-library", "third-party", "first-party", "local-folder" ]
+isort.split-on-trailing-comma = true
+pydocstyle.convention = "google"
+
+
+[tool.deptry]
+known_first_party = [ "django_centrifugo" ]
+
+
+[tool.pyproject-fmt]
+table_format = "long"
+sub_table_spacing = "\n"
+separate_root_table = "\n\n"
+expand_tables = [ "project.optional-dependencies" ]
+collapse_tables = [ "project" ]
+
+
+[tool.mypy]
+files = [ "." ]
+exclude = [ "django_centrifugo/_proto/.*_pb2.*", "docs/_build/" ]
+ignore_missing_imports = true
+warn_unreachable = true
+local_partial_types = true
+enable_error_code = [
+  "deprecated",
+  "explicit-override",
+  "ignore-without-code",
+  "mutable-override",
+  "possibly-undefined",
+  "redundant-expr",
+  "redundant-self",
+  "truthy-bool",
+  "truthy-iterable",
+  "unimported-reveal",
+  "unused-awaitable",
+]
+strict_bytes = true
+strict = true
+plugins = [ "mypy_django_plugin.main" ]
+
+
+[tool.pyright]
+exclude = [ "**/.*", "**/__pycache__", "**/node_modules", ".venv", "django_centrifugo/_proto/*_pb2*.py", "docs/_build" ]
+reportMissingImports = false
+
+
+[tool.django-stubs]
+django_settings_module = "tests.settings"
+
+
+[tool.pytest.ini_options]
+testpaths = [ "tests" ]
+pythonpath = [ "." ]
+norecursedirs = "*.egg .eggs dist build docs .tox .git __pycache__"
+python_files = [ "test_*.py" ]
+django_find_project = false
+DJANGO_SETTINGS_MODULE = "tests.settings"
+
+
+[tool.coverage.run]
+source = [ "django_centrifugo" ]
+omit = [ "django_centrifugo/_proto/*_pb2*.py" ]
+
+[tool.coverage.report]
+exclude_lines = [
+  '\.\.\.',
+  "except ImportError as e:",
+  "except ImportError:",
+  "if TYPE_CHECKING:",
+  "pragma: no cover",
+]
+
+
+[tool.bumpversion]
+tag = true
+tag_name = "v{new_version}"
+tag_message = "Release {new_version}"
+commit = true
+message = "chore(release): bump {current_version} → {new_version}"
+pre_commit_hooks = [
+  "uv lock",
+  "git add uv.lock",
+]

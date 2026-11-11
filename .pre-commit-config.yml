@@ -1,0 +1,116 @@
+default_install_hook_types:
+  - pre-commit
+  - commit-msg
+
+default_language_version:
+  python: "3.12"
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-ast
+      - id: check-case-conflict
+      - id: check-merge-conflict
+      - id: check-toml
+      - id: check-yaml
+      - id: debug-statements
+      - id: end-of-file-fixer
+      - id: mixed-line-ending
+      - id: trailing-whitespace
+
+  - repo: https://github.com/python-jsonschema/check-jsonschema
+    rev: 0.39.0
+    hooks:
+      - id: check-github-workflows
+      - id: check-github-actions
+      - id: check-renovate
+      - id: check-compose-spec
+      - id: check-readthedocs
+
+  - repo: https://github.com/charliermarsh/ruff-pre-commit
+    rev: v0.17.4
+    hooks:
+      - id: ruff-check
+        args: ["--fix"]
+      - id: ruff-format
+
+  - repo: https://github.com/sphinx-contrib/sphinx-lint
+    rev: v1.0.2
+    hooks:
+      - id: sphinx-lint
+        args: ["--enable=all", "--disable=line-too-long"]
+        files: ^docs/
+
+  - repo: https://github.com/woodruffw/zizmor-pre-commit
+    rev: v1.32.0
+    hooks:
+      - id: zizmor
+        args:
+          - "--no-progress"
+          - "--fix"
+
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.12
+    hooks:
+      - id: actionlint
+        additional_dependencies:
+          - "github.com/wasilibs/go-shellcheck/cmd/shellcheck@latest"
+
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    rev: 0.13.7
+    hooks:
+      - id: uv-lock
+
+  - repo: https://github.com/compilerla/conventional-pre-commit
+    rev: v4.5.0
+    hooks:
+      - id: conventional-pre-commit
+        stages: [commit-msg]
+
+  - repo: https://github.com/crate-ci/typos
+    rev: v1.52.2
+    hooks:
+      - id: typos
+
+  - repo: https://github.com/tox-dev/pyproject-fmt
+    rev: "v2.30.6"
+    hooks:
+      - id: pyproject-fmt
+
+  - repo: https://github.com/abravalheri/validate-pyproject
+    rev: "v0.27"
+    hooks:
+      - id: validate-pyproject
+
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy
+        entry: uv run python -m mypy -n 4
+        language: system
+        types: [python]
+        pass_filenames: false
+        require_serial: true
+
+      - id: pyright
+        name: pyright
+        exclude: "tests"
+        language: system
+        entry: uv run --all-groups pyright
+        types: [python]
+        pass_filenames: false
+
+      - id: deptry
+        name: Check project dependencies (deptry)
+        language: system
+        entry: uv run --no-sync deptry django_centrifugo
+        always_run: true
+        pass_filenames: false
+        require_serial: true
+
+      - id: just-format
+        name: Check justfile formatting
+        language: system
+        entry: just --fmt
+        files: ^justfile$
+        pass_filenames: false

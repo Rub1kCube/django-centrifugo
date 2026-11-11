@@ -1,0 +1,29 @@
+# Commands for building and checking the Sphinx documentation
+
+set positional-arguments
+
+sphinxopts := env("SPHINXOPTS", "-W --keep-going")
+sourcedir := "."
+builddir := "_build"
+
+_default: (build 'html')
+
+[private]
+sphinx +targets:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    for target in {{ targets }}; do
+      uv run python -m sphinx -M "$target" "{{ sourcedir }}" \
+        "{{ builddir }}" {{ sphinxopts }}
+    done
+
+# Build one or more Sphinx targets
+build +targets='html': (sphinx targets)
+
+# Build HTML from scratch, run examples, and verify LLM documentation artifacts
+check: (sphinx 'clean html doctest')
+    test -s "{{ builddir }}/html/llms.txt"
+    test -s "{{ builddir }}/html/index.md"
+
+# Check links to external resources
+linkcheck: (sphinx 'clean linkcheck')

@@ -1,0 +1,10 @@
+{
+  "$schema": "https://context7.com/schema/context7.json",
+  "projectTitle": "django-centrifugo",
+  "description": "Django lib for integration centrifugo",
+  "folders": ["docs"],
+  "excludeFolders": ["docs/_build"],
+  "excludeFiles": [
+    "CONTRIBUTING.md"
+  ]
+}

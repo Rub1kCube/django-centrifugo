@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Centrifugo RPC and stream example</title>
+</head>
+<body>
+  <h1>Centrifugo RPC and stream example</h1>
+  <h2>RPC</h2>
+  <pre id="result">Connecting...</pre>
+  <h2>Channel</h2>
+  <pre id="subscription">Connecting...</pre>
+  <h2>Latest stream event</h2>
+  <pre id="publication">Waiting for messages...</pre>
+  <script>
+    const output = document.getElementById("result");
+    const subscription = document.getElementById("subscription");
+    const publication = document.getElementById("publication");
+    const channel = "chat:room.1";
+    const socket = new WebSocket("ws://localhost:8000/connection/websocket");
+
+    socket.addEventListener("open", () => {
+      socket.send(JSON.stringify({id: 1, connect: {}}));
+    });
+
+    socket.addEventListener("message", (event) => {
+      for (const line of event.data.trim().split("\n")) {
+        const reply = JSON.parse(line);
+        if (!reply.id && Object.keys(reply).length === 0) {
+          socket.send("{}"); // Respond to a Centrifugo ping.
+        } else if (reply.error) {
+          const message = JSON.stringify(reply.error, null, 2);
+          if (reply.id === 3) {
+            subscription.textContent = message;
+          } else {
+            output.textContent = message;
+            if (reply.id === 1) subscription.textContent = message;
+          }
+        } else if (reply.id === 1) {
+          socket.send(JSON.stringify({
+            id: 2,
+            rpc: {method: "greeting.hello", data: {name: "World"}}
+          }));
+          socket.send(JSON.stringify({id: 3, subscribe: {channel, data: {language: "ru"}}}));
+        } else if (reply.id === 2) {
+          output.textContent = JSON.stringify(reply.rpc.data, null, 2);
+        } else if (reply.id === 3) {
+          subscription.textContent = `Subscribed to ${channel}\n${JSON.stringify(reply.subscribe.data ?? {}, null, 2)}`;
+        } else if (reply.push?.pub && reply.push.channel === channel) {
+          publication.textContent = JSON.stringify(reply.push.pub.data, null, 2);
+        } else if (reply.push?.unsubscribe && reply.push.channel === channel) {
+          subscription.textContent = `Unsubscribed from ${channel}\n${JSON.stringify(reply.push.unsubscribe, null, 2)}`;
+        }
+      }
+    });
+
+    socket.addEventListener("error", () => {
+      output.textContent = "WebSocket connection failed. Check Centrifugo and its allowed origins.";
+      subscription.textContent = "WebSocket connection failed.";
+    });
+
+    socket.addEventListener("close", () => {
+      subscription.textContent = "WebSocket disconnected.";
+    });
+  </script>
+</body>
+</html>

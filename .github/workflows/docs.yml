@@ -1,0 +1,51 @@
+name: docs
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "docs/**"
+      - "**/*.py"
+      - ".github/workflows/docs.yml"
+      - ".readthedocs.yml"
+      - "justfile"
+      - "pyproject.toml"
+      - "uv.lock"
+  pull_request:
+    paths:
+      - "docs/**"
+      - "**/*.py"
+      - ".github/workflows/docs.yml"
+      - ".readthedocs.yml"
+      - "justfile"
+      - "pyproject.toml"
+      - "uv.lock"
+  workflow_dispatch:
+
+concurrency:
+  group: "${{ github.workflow }}-${{ github.head_ref || github.run_id }}"
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  docs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          version: "0.12.3"
+          python-version: "3.12"
+          enable-cache: true
+      - name: Install just
+        run: uv tool install rust-just
+      - name: Install dependencies
+        run: uv sync --locked --all-groups --all-extras
+      - name: Check documentation
+        run: just docs-check
