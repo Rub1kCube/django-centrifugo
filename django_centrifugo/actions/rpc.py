@@ -5,6 +5,7 @@ from types import NoneType
 from typing import TYPE_CHECKING, Any, override
 
 from django.core.exceptions import ImproperlyConfigured
+from typing_extensions import TypeForm
 
 from django_centrifugo.actions.base import BaseAction
 from django_centrifugo.actions.errors import PayloadValidationError
@@ -52,7 +53,7 @@ class RpcAction(BaseAction):
 
     """
 
-    output_model: Any
+    output_model: TypeForm[Any] | None
 
     def __init__(
         self,

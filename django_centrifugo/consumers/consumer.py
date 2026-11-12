@@ -5,6 +5,7 @@ import logging
 from typing import TYPE_CHECKING, Any, ClassVar, Generic, TypeVar
 
 from django.core.exceptions import ImproperlyConfigured, PermissionDenied
+from typing_extensions import TypeForm
 
 from django_centrifugo.actions.base import BaseAction
 from django_centrifugo.clients import create_async_client
@@ -17,7 +18,6 @@ if TYPE_CHECKING:
     from cent import AsyncClient
 
     from django_centrifugo.contracts import SubscribeContext
-    from django_centrifugo.errors import ErrorContext, ProxyError
     from django_centrifugo.serialization.base import SerializationBackend
 
 
@@ -48,7 +48,6 @@ class Consumer(Generic[BackendT]):
     """
 
     _centrifugo_client: AsyncClient | None = None
-    _stream_data: Any
 
     namespace: ClassVar[str] = ""
     """Optional inherited prefix prepended to RPC names with a dot."""
@@ -120,27 +119,31 @@ class Consumer(Generic[BackendT]):
             context: The same context passed to ``on_subscribe``.
         """
 
-    async def on_error(self, error: ErrorContext) -> ProxyError | None:  # noqa: ARG002
+    async def on_error(self, error: Exception) -> Any:
         """Handle an error raised while processing this consumer's request.
 
         Called for RPC validation and execution, subscription setup, and stream
         cleanup. Failures before a consumer is selected use the configured
         global error handler; authentication failures are rejected by gRPC.
-        Do not expose exception details to clients. Exceptions raised here
-        produce a safe internal error.
+        Returning a result stops error handling. Raise an exception to delegate
+        it to the global handler; the default implementation raises ``error``.
+        Do not expose exception details to clients.
 
         Args:
-            error: Classified failure and the associated request context, if available.
+            error: Original exception; potentially contains sensitive information.
 
         Returns:
-            A client-safe error, or ``None`` to use the global error handler.
-            For stream cleanup, the response is discarded because the stream
-            has already ended.
+            ``ProxyError`` for a Centrifugo protocol error, a serializable domain
+            result for RPC ``result.data``, including ``None`` for JSON null.
+            Domain results use the RPC's backend without validating against its
+            success model. Subscription refusals require ``ProxyError``; domain
+            results fall back to the default protocol error. Once a stream has
+            been accepted, the returned result cannot be sent to the client.
         """
-        return None
+        raise error
 
     @classmethod
-    def _configure_subscription(cls, backend_class: type[SerializationBackend]) -> Any:
+    def _configure_subscription(cls, backend_class: type[SerializationBackend]) -> TypeForm[Any]:
         method = cls.on_subscribe
         if method is Consumer.on_subscribe:
             return Any

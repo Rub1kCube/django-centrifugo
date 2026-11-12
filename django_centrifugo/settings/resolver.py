@@ -22,22 +22,19 @@ def _user_settings() -> Mapping[str, Any]:
     if not isinstance(configuration, Mapping):
         message = f"{PREFIX_NAME_SETTING} must be a mapping"
         raise ImproperlyConfigured(message)
-    if "action_modules" in configuration:
-        message = (
-            "CENTRIFUGO_SETTINGS['action_modules'] has been removed; use 'consumers' with paths to classes, "
-            "for example ['myapp.consumers.ChatConsumer']"
-        )
-        raise ImproperlyConfigured(message)
+
     for key in configuration:
         if key not in DEFAULT_SETTINGS:
             message = f"Unknown {PREFIX_NAME_SETTING} key: {key!r}"
             raise ImproperlyConfigured(message)
+
     return configuration
 
 
 def _import(value: Any, setting: Settings) -> Any:
     if not isinstance(value, str):
         return value
+
     try:
         return import_string(value)
     except ImportError as exc:
@@ -60,19 +57,23 @@ def _resolve_setting(setting: Settings) -> Any:
     value = _user_settings().get(setting, DEFAULT_SETTINGS[setting])
     if setting == Settings.error_handler:
         value = _import(value, setting)
-        if value is not None and not callable(value):
+        if not callable(value):
             msg = "CENTRIFUGO_SETTINGS['error_handler'] must be callable"
             raise ImproperlyConfigured(msg)
+
     elif setting == Settings.consumers:
         if not isinstance(value, (list, tuple)) or not all(isinstance(item, str) and item.strip() for item in value):
             msg = "CENTRIFUGO_SETTINGS['consumers'] must be a list or tuple of nonempty consumer class paths"
             raise ImproperlyConfigured(msg)
         value = tuple(value)
+
     elif setting == Settings.client:
         value = _client_config(value)
+
     elif not isinstance(value, str):
         msg = f"CENTRIFUGO_SETTINGS[{setting.value!r}] must be a string"
         raise ImproperlyConfigured(msg)
+
     return value
 
 

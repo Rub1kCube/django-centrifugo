@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any, cast, override
 
 import grpc
 import msgspec
-from asgiref.sync import sync_to_async
+from asgiref.sync import iscoroutinefunction, sync_to_async
 from django.core.exceptions import ImproperlyConfigured, PermissionDenied
 from django.db import close_old_connections
 from grpc_health.v1 import health, health_pb2, health_pb2_grpc
@@ -21,7 +21,13 @@ from django_centrifugo.actions import PayloadValidationError, UnknownActionError
 from django_centrifugo.consumers.consumer import _close_consumer_client
 from django_centrifugo.consumers.registry import _get_registry
 from django_centrifugo.contracts import RpcContext, SubscribeContext
-from django_centrifugo.errors import ErrorContext, ProxyError, default_error_handler
+from django_centrifugo.errors import (
+    ErrorCode,
+    InvalidRequestError,
+    ProxyError,
+    UnknownChannelError,
+    default_error_handler,
+)
 from django_centrifugo.grpc._access_log import _log_access
 from django_centrifugo.settings import Settings, resolve_setting
 
@@ -31,6 +37,8 @@ if TYPE_CHECKING:
 
     from django_centrifugo.actions.stream import StreamAction
     from django_centrifugo.consumers.registry import _ConsumerRegistry
+    from django_centrifugo.contracts import ClientProtocol, ClientTransport
+    from django_centrifugo.serialization.base import SerializationBackend
 
 
 logger = logging.getLogger(__name__)
@@ -51,14 +59,6 @@ async def _database_scope() -> AsyncGenerator[None, None]:
             logger.exception("Centrifugo database connection cleanup failed")
 
 
-class _InvalidRequest(ValueError):
-    pass
-
-
-class _UnknownChannel(LookupError):
-    pass
-
-
 def _json(data: bytes, *, default: Any = None) -> Any:
     if not data:
         return default
@@ -66,24 +66,59 @@ def _json(data: bytes, *, default: Any = None) -> Any:
         return msgspec.json.decode(data)
     except msgspec.DecodeError as exc:
         msg = "Invalid JSON"
-        raise _InvalidRequest(msg) from exc
+        raise InvalidRequestError(msg) from exc
 
 
-async def _error(error: ErrorContext, consumer: Any = None) -> proxy_pb2.Error:
+def _encode_error_data(result: Any, backend_class: type[SerializationBackend] | None) -> bytes:
+    backend = backend_class() if backend_class is not None else None
+
+    def encode_model(value: Any) -> Any:
+        if backend is not None and backend.is_supported_annotation(type(value)):
+            return backend.to_python(value, mode="json", by_alias=True)
+        msg = f"Unsupported domain error result: {type(value).__qualname__}"
+        raise TypeError(msg)
+
+    return msgspec.json.encode(result, enc_hook=encode_model)
+
+
+async def _handle_error(error: Exception, consumer: Any = None) -> Any:
+    if consumer is not None:
+        try:
+            return await consumer.on_error(error)
+        except Exception as exc:  # noqa: BLE001 - raised errors delegate to the global handler
+            error = exc
+
     try:
-        result = await consumer.on_error(error) if consumer is not None else None
-        if result is None:
-            handler = resolve_setting(Settings.error_handler)
-            result = (
-                await sync_to_async(handler, thread_sensitive=True)(error)
-                if handler is not None
-                else default_error_handler(error)
-            )
+        handler = resolve_setting(Settings.error_handler)
+        return (
+            await handler(error)
+            if iscoroutinefunction(handler)
+            else await sync_to_async(handler, thread_sensitive=True)(error)
+        )
+    except Exception:
+        logger.exception("Centrifugo proxy error handler failed")
+        return ProxyError(ErrorCode.INTERNAL, "internal server error", temporary=True)
+
+
+async def _error(
+    error: Exception,
+    consumer: Any = None,
+    *,
+    allow_data: bool = False,
+    backend_class: type[SerializationBackend] | None = None,
+) -> proxy_pb2.Error | bytes:
+    try:
+        result = await _handle_error(error, consumer)
+        if not isinstance(result, ProxyError):
+            if allow_data:
+                return _encode_error_data(result, backend_class)
+            logger.error("Centrifugo subscription error handler must return ProxyError")
+            result = default_error_handler(error)
 
         if (
-            not isinstance(result, ProxyError)
-            or type(result.code) is not int
-            or result.code not in range(400, 2000)
+            not isinstance(cast("Any", result.code), int)
+            or isinstance(result.code, bool)
+            or (result.code not in ErrorCode and result.code not in range(400, 2000))
             or not isinstance(cast("Any", result.message), str)
             or not isinstance(cast("Any", result.temporary), bool)
         ):
@@ -92,7 +127,7 @@ async def _error(error: ErrorContext, consumer: Any = None) -> proxy_pb2.Error:
         return proxy_pb2.Error(code=result.code, message=result.message, temporary=result.temporary)
     except Exception:
         logger.exception("Centrifugo proxy error handler failed")
-        return proxy_pb2.Error(code=1000, message="Internal error")
+        return proxy_pb2.Error(code=ErrorCode.INTERNAL, message="internal server error", temporary=True)
 
 
 class _ProxyService(proxy_pb2_grpc.CentrifugoProxyServicer):
@@ -107,7 +142,7 @@ class _ProxyService(proxy_pb2_grpc.CentrifugoProxyServicer):
                     await consumer.on_stream_end(context)
                 except Exception as exc:
                     logger.exception("Centrifugo subscription stream cleanup failed")
-                    await _error(ErrorContext("stream_end", "internal", exc, context), consumer)
+                    await _handle_error(exc, consumer)
         except Exception:
             logger.exception("Centrifugo subscription database setup failed")
         finally:
@@ -149,7 +184,9 @@ class _ProxyService(proxy_pb2_grpc.CentrifugoProxyServicer):
             raise
         except Exception:
             logger.exception("Centrifugo RPC database setup failed")
-            response = proxy_pb2.RPCResponse(error=proxy_pb2.Error(code=1000, message="Internal error"))
+            response = proxy_pb2.RPCResponse(
+                error=proxy_pb2.Error(code=ErrorCode.INTERNAL, message="internal server error", temporary=True)
+            )
         code = response.error.code if response.HasField("error") else None
         _log_access(
             "RPC", request.method, "ERROR" if code is not None else "OK", started, grpc_status="OK", error_code=code
@@ -158,43 +195,42 @@ class _ProxyService(proxy_pb2_grpc.CentrifugoProxyServicer):
 
     async def _rpc(self, request: proxy_pb2.RPCRequest) -> proxy_pb2.RPCResponse:
         consumer = None
-        rpc_context = None
+        backend_class = None
 
         try:
             try:
                 if request.encoding != "json" or not request.method or request.b64data:
-                    raise _InvalidRequest  # noqa: TRY301
+                    raise InvalidRequestError  # noqa: TRY301
 
                 action, consumer_class = self._registry.resolve_action(request.method)
+                backend_class = action._backend_class  # noqa: SLF001
                 consumer = consumer_class()
                 rpc_context = RpcContext(
-                    request.client,
-                    request.transport,
-                    request.protocol,
-                    request.encoding,
-                    request.user,
-                    request.method,
-                    _json(request.meta),
+                    client=request.client,
+                    transport=cast("ClientTransport", request.transport),
+                    protocol=cast("ClientProtocol", request.protocol),
+                    encoding="json",
+                    user=request.user,
+                    method=request.method,
+                    meta=_json(request.meta),
+                    labels=dict(request.labels),
                 )
                 data = _json(request.data)
 
                 if not isinstance(data, dict):
-                    raise _InvalidRequest  # noqa: TRY301
+                    raise InvalidRequestError  # noqa: TRY301
 
                 result = await action(data, rpc_context, consumer=consumer)
                 return proxy_pb2.RPCResponse(result=proxy_pb2.RPCResult(data=msgspec.json.encode(result)))
-            except _InvalidRequest as exc:
-                error = ErrorContext("rpc", "request", exc, rpc_context)
-            except UnknownActionError as exc:
-                error = ErrorContext("rpc", "unknown_action", exc, rpc_context)
-            except PayloadValidationError as exc:
-                error = ErrorContext("rpc", "validation", exc, rpc_context)
-            except PermissionDenied as exc:
-                error = ErrorContext("rpc", "permission", exc, rpc_context)
             except Exception as exc:
-                logger.exception("Centrifugo RPC action failed")
-                error = ErrorContext("rpc", "internal", exc, rpc_context)
-            return proxy_pb2.RPCResponse(error=await _error(error, consumer))
+                if not isinstance(
+                    exc, (InvalidRequestError, UnknownActionError, PayloadValidationError, PermissionDenied)
+                ):
+                    logger.exception("Centrifugo RPC action failed")
+                result = await _error(exc, consumer, allow_data=True, backend_class=backend_class)
+                if isinstance(result, proxy_pb2.Error):
+                    return proxy_pb2.RPCResponse(error=result)
+                return proxy_pb2.RPCResponse(result=proxy_pb2.RPCResult(data=result))
 
         finally:
             await _close_consumer_client(consumer)
@@ -215,19 +251,22 @@ class _ProxyService(proxy_pb2_grpc.CentrifugoProxyServicer):
 
         consumer, sub_context, task = None, None, None
         declaration: StreamAction | None = None
+        validated_data: Any = None
         accepted = False
         reported = False
         try:
             try:
                 async with _database_scope():
-                    consumer, sub_context, response, declaration = await self._subscribe(request)
+                    consumer, sub_context, response, declaration, validated_data = await self._subscribe(request)
                     if consumer is not None and sub_context is not None:
                         task = asyncio.current_task()
                         if task is not None:
                             self.streams.add(task)
             except Exception:
                 logger.exception("Centrifugo subscription database setup failed")
-                response = proxy_pb2.SubscribeResponse(error=proxy_pb2.Error(code=1000, message="Internal error"))
+                response = proxy_pb2.SubscribeResponse(
+                    error=proxy_pb2.Error(code=ErrorCode.INTERNAL, message="internal server error", temporary=True)
+                )
 
             code = response.error.code if response.HasField("error") else None
             accepted = code is None
@@ -243,7 +282,7 @@ class _ProxyService(proxy_pb2_grpc.CentrifugoProxyServicer):
             yield proxy_pb2.StreamSubscribeResponse(subscribe_response=response)
             if consumer is not None and sub_context is not None:
                 if declaration is not None:
-                    generator = declaration(consumer._stream_data, sub_context, consumer=consumer)  # noqa: SLF001
+                    generator = declaration(validated_data, sub_context, consumer=consumer)
                     try:
                         async with aclosing(generator):
                             while True:
@@ -259,7 +298,7 @@ class _ProxyService(proxy_pb2_grpc.CentrifugoProxyServicer):
                     except Exception as exc:
                         logger.exception("Centrifugo subscription stream failed")
                         async with _database_scope():
-                            await _error(ErrorContext("stream", "internal", exc, sub_context), consumer)
+                            await _handle_error(exc, consumer)
                         await context.abort(grpc.StatusCode.INTERNAL, "Subscription stream failed")
                     if declaration.close_on_complete:
                         return
@@ -280,9 +319,9 @@ class _ProxyService(proxy_pb2_grpc.CentrifugoProxyServicer):
                 if accepted:
                     _log_access("SUBSCRIBE", request.channel, "CLOSED", started, grpc_status="-")
 
-    async def _subscribe(  # noqa: C901
+    async def _subscribe(
         self, request: proxy_pb2.SubscribeRequest
-    ) -> tuple[Any, SubscribeContext | None, proxy_pb2.SubscribeResponse, StreamAction | None]:
+    ) -> tuple[Any, SubscribeContext | None, proxy_pb2.SubscribeResponse, StreamAction | None, Any]:
 
         consumer = None
         sub_context = None
@@ -290,49 +329,45 @@ class _ProxyService(proxy_pb2_grpc.CentrifugoProxyServicer):
         try:
             try:
                 if request.encoding != "json" or not request.channel or request.b64data:
-                    raise _InvalidRequest  # noqa: TRY301
+                    raise InvalidRequestError  # noqa: TRY301
 
                 route = self._registry.resolve_channel(request.channel)
                 if route is None:
-                    raise _UnknownChannel  # noqa: TRY301
+                    raise UnknownChannelError  # noqa: TRY301
 
                 entry, params = route
                 consumer = entry.consumer_class()
                 data = _json(request.data)
                 if data is not None and not isinstance(data, dict):
-                    raise _InvalidRequest  # noqa: TRY301
+                    raise InvalidRequestError  # noqa: TRY301
 
                 sub_context = SubscribeContext(
                     client=request.client,
-                    transport=request.transport,
-                    protocol=request.protocol,
-                    encoding=request.encoding,
+                    transport=cast("ClientTransport", request.transport),
+                    protocol=cast("ClientProtocol", request.protocol),
+                    encoding="json",
                     user=request.user,
                     channel=request.channel,
                     params=params,
                     meta=_json(request.meta),
+                    token=request.token,
+                    labels=dict(request.labels),
                 )
 
                 validated_data = entry.validate_data(data)
                 result = cast("Any", await consumer.on_subscribe(data=validated_data, context=sub_context))
-                consumer._stream_data = validated_data  # noqa: SLF001
                 if result is not None and not isinstance(result, dict):
                     msg = "on_subscribe must return a JSON object or None"
                     raise TypeError(msg)  # noqa: TRY301
 
                 initial_data = msgspec.json.encode(result) if result is not None else b""
 
-            except PermissionDenied as exc:
-                error = ErrorContext("subscribe", "permission", exc, sub_context)
-            except _InvalidRequest as exc:
-                error = ErrorContext("subscribe", "request", exc, sub_context)
-            except _UnknownChannel as exc:
-                error = ErrorContext("subscribe", "unknown_channel", exc, sub_context)
-            except PayloadValidationError as exc:
-                error = ErrorContext("subscribe", "validation", exc, sub_context)
             except Exception as exc:
-                logger.exception("Centrifugo subscription failed")
-                error = ErrorContext("subscribe", "internal", exc, sub_context)
+                if not isinstance(
+                    exc, (PermissionDenied, InvalidRequestError, UnknownChannelError, PayloadValidationError)
+                ):
+                    logger.exception("Centrifugo subscription failed")
+                error = cast("proxy_pb2.Error", await _error(exc, consumer))
             else:
                 accepted = True
                 return (
@@ -340,8 +375,9 @@ class _ProxyService(proxy_pb2_grpc.CentrifugoProxyServicer):
                     sub_context,
                     proxy_pb2.SubscribeResponse(result=proxy_pb2.SubscribeResult(data=initial_data)),
                     entry.get_stream(),
+                    validated_data,
                 )
-            return None, None, proxy_pb2.SubscribeResponse(error=await _error(error, consumer)), None
+            return None, None, proxy_pb2.SubscribeResponse(error=error), None, None
 
         finally:
             if not accepted:

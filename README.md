@@ -118,6 +118,11 @@ proxy using Django sessions. It must be registered explicitly and configured
 with its own `connect_secret`. See the [session authentication guide](docs/pages/session-authentication.rst)
 for cookie, secret, origin, and connection-lifetime requirements.
 
+## AsyncAPI documentation
+
+AsyncAPI documentation generation for RPC methods and subscription streams is
+planned. Schema export and a documentation UI are not yet available in this release.
+
 ## Documentation and development
 
 The [documentation](docs/index.rst) contains the full guides and API reference.

@@ -8,15 +8,26 @@ name = "django-centrifugo"
 version = "0.0.1"
 description = "Django lib for integration centrifugo"
 readme = "README.md"
+keywords = [ "asyncapi", "centrifugo", "django", "rpc", "websocket" ]
 license = "MIT"
 license-files = [ "LICENSE" ]
 requires-python = ">=3.12"
 classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Web Environment",
+  "Framework :: AsyncIO",
+  "Framework :: Django",
+  "Framework :: Django :: 5.2",
+  "Intended Audience :: Developers",
+  "Operating System :: OS Independent",
   "Programming Language :: Python :: 3 :: Only",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
   "Programming Language :: Python :: 3.14",
   "Programming Language :: Python :: 3.15",
+  "Topic :: Internet :: WWW/HTTP",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+  "Typing :: Typed",
 ]
 dependencies = [
   "asgiref>=3.8.1,<4",
@@ -29,7 +40,12 @@ dependencies = [
   "protobuf>=6.33.5,<7",
   "rich>=14,<16",
   "typer>=0.27,<1",
+  "typing-extensions>=4.13,<5",
 ]
+
+[[project.authors]]
+name = "Demin Vadim"
+email = "demin02vadim@gmail.com"
 
 [project.optional-dependencies]
 pydantic = [ "pydantic>=2.12,<3" ]
@@ -46,12 +62,14 @@ dev = [
 test = [
   "grpcio-tools==1.81.1",
   "httpx2>=2.16",
+  "polyfactory>=3.5",
   "pytest>=9.1.1",
   "pytest-cov>=7",
   "pytest-django",
   "pytest-randomly>=5",
   "pytest-sugar>=1.1.1",
   "pytest-xdist>=3.8",
+  "syrupy>=7",
 ]
 docs = [
   "docutils>=0.22,<0.23",
@@ -184,7 +202,7 @@ known_first_party = [ "django_centrifugo" ]
 table_format = "long"
 sub_table_spacing = "\n"
 separate_root_table = "\n\n"
-expand_tables = [ "project.optional-dependencies" ]
+expand_tables = [ "project.authors", "project.optional-dependencies" ]
 collapse_tables = [ "project" ]
 
 

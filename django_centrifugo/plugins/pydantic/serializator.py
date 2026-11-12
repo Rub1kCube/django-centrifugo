@@ -1,6 +1,7 @@
 from typing import Any, ClassVar, Literal, cast, get_args
 
 from pydantic import BaseModel, TypeAdapter, ValidationError
+from typing_extensions import TypeForm
 
 from django_centrifugo.serialization.errors import ValidationIssue
 from django_centrifugo.utils.type_inspection import (
@@ -13,7 +14,7 @@ from django_centrifugo.utils.type_inspection import (
 
 
 @cache_annotation
-def _adapter(annotation: Any) -> TypeAdapter[Any]:
+def _adapter(annotation: TypeForm[Any]) -> TypeAdapter[Any]:
     return TypeAdapter(annotation)
 
 
@@ -23,7 +24,7 @@ class PydanticSerializationBackend:
     json_schema_generator_class: ClassVar[type[Any] | None] = None
     """No schema generator is provided by this integration."""
 
-    def is_supported_annotation(self, annotation: Any) -> bool:
+    def is_supported_annotation(self, annotation: TypeForm[Any]) -> bool:
         """Accept models and unions of models and None, including Annotated."""
         model, _ = unwrap_annotation(annotation)
         if is_union(model):
@@ -32,7 +33,7 @@ class PydanticSerializationBackend:
 
     def validate(
         self,
-        annotation: Any,
+        annotation: TypeForm[Any],
         data: Any,
         *,
         from_attributes: bool | None = None,

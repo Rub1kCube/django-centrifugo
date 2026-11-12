@@ -7,6 +7,7 @@ from types import MethodType
 from typing import TYPE_CHECKING, Any, Self, cast, overload
 
 from django.core.exceptions import ImproperlyConfigured
+from typing_extensions import TypeForm
 
 from django_centrifugo.utils.type_inspection import MethodSignature
 
@@ -43,8 +44,8 @@ class BaseAction(ABC):
         deprecated: Whether the action is deprecated in documentation.
     """
 
-    data_annotation: Any
-    return_annotation: Any
+    data_annotation: TypeForm[Any]
+    return_annotation: TypeForm[Any]
 
     def __init__(
         self,
@@ -78,7 +79,7 @@ class BaseAction(ABC):
         """Create a configured copy for the selected consumer and backend."""
         ...
 
-    def _inspect_method_signature(self, owner: type, method_name: str) -> tuple[Any, Any]:
+    def _inspect_method_signature(self, owner: type, method_name: str) -> tuple[TypeForm[Any], TypeForm[Any]]:
         try:
             signature = MethodSignature.from_method(
                 self.method, target_class=owner, annotation_names={"data", "return"}

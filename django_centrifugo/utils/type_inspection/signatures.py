@@ -7,6 +7,8 @@ from functools import lru_cache
 from types import MappingProxyType, SimpleNamespace
 from typing import TYPE_CHECKING, Any, get_type_hints
 
+from typing_extensions import TypeForm
+
 from django_centrifugo.utils.type_inspection.resolution import generic_bindings, resolve_type
 
 
@@ -28,10 +30,10 @@ class MethodSignature:
     signature: inspect.Signature
     """Public callable signature, including default values."""
 
-    annotations: Mapping[str, Any]
+    annotations: Mapping[str, TypeForm[Any]]
     """Selected annotations with generic type parameters resolved."""
 
-    bindings: Mapping[Any, Any]
+    bindings: Mapping[Any, TypeForm[Any]]
     """Generic type bindings between the target and declaring classes."""
 
     @classmethod
@@ -81,7 +83,7 @@ class MethodSignature:
         original = inspect.unwrap(function)
         original_signature = inspect.signature(original)
         namespace: dict[str, Any] = {}
-        bindings: dict[Any, Any] = {}
+        bindings: dict[Any, TypeForm[Any]] = {}
 
         if target_class is not None:
             owner = next(

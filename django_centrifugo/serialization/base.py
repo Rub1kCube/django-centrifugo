@@ -1,5 +1,7 @@
 from typing import Any, ClassVar, Literal, Protocol
 
+from typing_extensions import TypeForm
+
 from django_centrifugo.serialization.errors import ValidationIssue
 
 
@@ -8,11 +10,11 @@ class SerializationBackend(Protocol):
 
     json_schema_generator_class: ClassVar[type[Any] | None]
 
-    def is_supported_annotation(self, annotation: Any) -> bool:
+    def is_supported_annotation(self, annotation: TypeForm[Any]) -> bool:
         """Return whether this backend supports the payload annotation."""
         ...
 
-    def validate(self, annotation: Any, data: Any, *, from_attributes: bool | None = None) -> Any:
+    def validate(self, annotation: TypeForm[Any], data: Any, *, from_attributes: bool | None = None) -> Any:
         """Validate data against an annotation and return the resulting object."""
         ...
 

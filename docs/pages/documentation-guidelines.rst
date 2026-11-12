@@ -69,6 +69,15 @@ qualified target when a short name could be ambiguous. Prefix a Python target wi
 Keep ``nitpicky`` references valid. Do not suppress a missing-reference warning
 unless the referenced object genuinely cannot be linked.
 
+In attribute docstrings, write external links using this form:
+
+.. code-block:: rst
+
+   `label <https://example.com>`_
+
+Napoleon interprets a bare URL at the start of an attribute docstring as a type
+declaration because of the colon in ``https:``.
+
 Examples and doctests
 ---------------------
 

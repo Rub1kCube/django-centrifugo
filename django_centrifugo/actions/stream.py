@@ -6,6 +6,7 @@ from contextlib import aclosing
 from typing import TYPE_CHECKING, Any, get_args, get_origin, override
 
 from django.core.exceptions import ImproperlyConfigured
+from typing_extensions import TypeForm
 
 from django_centrifugo.actions.base import BaseAction
 from django_centrifugo.serialization.output import _output_model, _validate_output
@@ -39,7 +40,7 @@ class StreamAction(BaseAction):
         output_model: Resolved model used to validate each event after configuration.
     """
 
-    output_model: Any
+    output_model: TypeForm[Any]
 
     def __init__(
         self,

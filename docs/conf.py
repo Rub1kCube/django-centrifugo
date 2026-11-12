@@ -59,6 +59,8 @@ nitpick_ignore = [
     ("py:data", "typing.NotRequired"),
     ("py:data", "typing.Unpack"),
     ("py:data", "typing.Any"),
+    ("py:data", "typing.Optional"),
+    ("py:data", "typing_extensions.TypeForm"),
     ("py:data", "typing.Literal"),
     ("py:data", "typing.ClassVar"),
     ("py:data", "Ellipsis"),

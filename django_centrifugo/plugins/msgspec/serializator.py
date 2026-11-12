@@ -1,6 +1,7 @@
 from typing import Any, ClassVar, Literal, get_args
 
 import msgspec
+from typing_extensions import TypeForm
 
 from django_centrifugo.serialization.errors import ValidationIssue
 from django_centrifugo.utils.type_inspection import is_none_type, is_safe_subclass, is_union, unwrap_annotation
@@ -12,14 +13,14 @@ class MsgspecSerializationBackend:
     json_schema_generator_class: ClassVar[type[Any] | None] = None
     """No schema generator is provided by this integration."""
 
-    def is_supported_annotation(self, annotation: Any) -> bool:
+    def is_supported_annotation(self, annotation: TypeForm[Any]) -> bool:
         """Accept Structs and unions of Structs and None, including Annotated."""
         model, _ = unwrap_annotation(annotation)
         if is_union(model):
             return all(is_none_type(part) or self.is_supported_annotation(part) for part in get_args(model))
         return is_safe_subclass(model, msgspec.Struct)
 
-    def validate(self, annotation: Any, data: Any, *, from_attributes: bool | None = None) -> Any:
+    def validate(self, annotation: TypeForm[Any], data: Any, *, from_attributes: bool | None = None) -> Any:
         """Convert and validate using msgspec's default strictness."""
         return msgspec.convert(data, type=annotation, from_attributes=bool(from_attributes))
 

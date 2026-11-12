@@ -61,6 +61,37 @@ retaining their separate execution and output validation behavior.
 .. automodule:: django_centrifugo.consumers.registry
    :members: resolve_stream
 
+Consumer metadata
+~~~~~~~~~~~~~~~~~
+
+The internal consumer registry exposes ``describe(consumers=None)`` for schema
+generators. It returns an immutable
+:class:`~django_centrifugo.consumers.metadata.ApplicationMetadata` snapshot of
+configured contracts without inspecting handlers again or executing them.
+``None`` selects all registered consumers; an empty sequence selects none.
+Explicit selections must contain registered classes, including consumers without
+actions. Results preserve registration order and include duplicate selections
+once. An unregistered class raises ``ImproperlyConfigured``.
+
+RPC metadata contains the effective serialization backend, resolved input
+annotation, and validated output annotation. ``Output[T]`` becomes ``T``;
+an RPC returning ``None`` has ``NoneType`` as its output annotation. Subscription
+inputs come from the configured ``on_subscribe`` contract. Routes retain their
+original spelling, expose addresses with ``{parameter}`` placeholders, and list
+converter names and matching patterns. A channel without a stream has no inferred
+publication contract. Python annotations retain ``Annotated`` metadata; JSON
+schemas are generated separately.
+
+Each call returns a fresh snapshot. Changing ``CENTRIFUGO_SETTINGS`` invalidates
+the configured registry for subsequent lookups; previously obtained registries
+and metadata snapshots remain usable.
+
+.. automodule:: django_centrifugo.consumers.metadata
+   :members:
+
+Action contracts
+~~~~~~~~~~~~~~~~
+
 .. automodule:: django_centrifugo.actions.base
    :members:
 

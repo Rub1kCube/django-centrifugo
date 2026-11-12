@@ -1,5 +1,3 @@
-"""Inspect RPC actions enabled through the consumer settings."""
-
 from __future__ import annotations
 
 from typing import TYPE_CHECKING

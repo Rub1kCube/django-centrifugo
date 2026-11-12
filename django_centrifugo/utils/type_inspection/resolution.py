@@ -2,7 +2,9 @@ from collections.abc import Mapping
 from functools import reduce
 from operator import or_
 from types import get_original_bases
-from typing import Annotated, Any, TypeAliasType, TypeVar, get_args, get_origin
+from typing import Annotated, Any, TypeAliasType, TypeVar, cast, get_args, get_origin
+
+from typing_extensions import TypeForm
 
 from django_centrifugo.utils.type_inspection.predicates import (
     is_annotated,
@@ -15,9 +17,9 @@ from django_centrifugo.utils.type_inspection.predicates import (
 
 
 def resolve_type(
-    annotation: Any,
-    bindings: Mapping[Any, Any],
-) -> Any:
+    annotation: TypeForm[Any],
+    bindings: Mapping[Any, TypeForm[Any]],
+) -> TypeForm[Any]:
     """Выбрать способ подстановки параметров для соответствующего вида аннотации."""
     if is_type_var(annotation):
         return resolve_type_var(annotation, bindings)
@@ -42,44 +44,46 @@ def resolve_type(
 
 def resolve_type_var(
     parameter: TypeVar,
-    bindings: Mapping[Any, Any],
-) -> Any:
+    bindings: Mapping[Any, TypeForm[Any]],
+) -> TypeForm[Any]:
     """Подставить тип по цепочке привязок, сохранив непривязанный параметр."""
-    replacement = bindings.get(parameter, parameter)
-    return parameter if replacement is parameter else resolve_type(replacement, bindings)
+    # Unresolved TypeVars can occur in runtime annotations before substitution.
+    annotation = cast("TypeForm[Any]", parameter)
+    replacement = bindings.get(parameter, annotation)
+    return annotation if replacement is annotation else resolve_type(replacement, bindings)
 
 
 def resolve_type_alias(
     alias: TypeAliasType,
     arguments: tuple[Any, ...],
-    bindings: Mapping[Any, Any],
-) -> Any:
+    bindings: Mapping[Any, TypeForm[Any]],
+) -> TypeForm[Any]:
     """Раскрыть alias с учётом его собственных параметров и внешних привязок."""
     parameters = dict(zip(alias.__type_params__, arguments, strict=False))
     return resolve_type(alias.__value__, {**bindings, **parameters})
 
 
 def resolve_annotated(
-    annotation: Any,
-    bindings: Mapping[Any, Any],
-) -> Any:
+    annotation: TypeForm[Any],
+    bindings: Mapping[Any, TypeForm[Any]],
+) -> TypeForm[Any]:
     """Разрешить базовый тип Annotated, сохранив метаданные и их порядок."""
     model, metadata = unwrap_annotation(annotation)
-    return Annotated[resolve_type(model, bindings), *metadata]
+    return cast("TypeForm[Any]", Annotated[resolve_type(model, bindings), *metadata])
 
 
 def resolve_union(
-    annotation: Any,
-    bindings: Mapping[Any, Any],
-) -> Any:
+    annotation: TypeForm[Any],
+    bindings: Mapping[Any, TypeForm[Any]],
+) -> TypeForm[Any]:
     """Разрешить все варианты объединения, включая NoneType."""
     return reduce(or_, (resolve_type(item, bindings) for item in get_args(annotation)))
 
 
 def resolve_generic(
-    annotation: Any,
-    bindings: Mapping[Any, Any],
-) -> Any:
+    annotation: TypeForm[Any],
+    bindings: Mapping[Any, TypeForm[Any]],
+) -> TypeForm[Any]:
     """Подставить аргументы generic-типа, сохранив исходную аннотацию при отсутствии изменений."""
     origin = get_origin(annotation)
     arguments = get_args(annotation) if origin else getattr(annotation, "__parameters__", ())
@@ -90,10 +94,12 @@ def resolve_generic(
 
     if resolved == arguments:
         return annotation
-    return (origin or annotation)[resolved[0] if len(resolved) == 1 else resolved]
+    # Runtime generic subscription is not part of the TypeForm interface.
+    generic: Any = origin or annotation
+    return cast("TypeForm[Any]", generic[resolved[0] if len(resolved) == 1 else resolved])
 
 
-def unwrap_annotation(annotation: Any) -> tuple[Any, tuple[Any, ...]]:
+def unwrap_annotation(annotation: TypeForm[Any]) -> tuple[TypeForm[Any], tuple[Any, ...]]:
     """Отделить метаданные Annotated, сохранив значимые значения, включая None."""
     if is_annotated(annotation):
         model, *metadata = get_args(annotation)
@@ -101,7 +107,7 @@ def unwrap_annotation(annotation: Any) -> tuple[Any, tuple[Any, ...]]:
     return annotation, ()
 
 
-def model_annotation(annotation: Any) -> tuple[Any, bool]:
+def model_annotation(annotation: TypeForm[Any]) -> tuple[TypeForm[Any], bool]:
     """Отделить допустимость None, сохранив объединения моделей и метаданные их валидации."""
     model, metadata = unwrap_annotation(annotation)
     nullable = False
@@ -111,14 +117,14 @@ def model_annotation(annotation: Any) -> tuple[Any, bool]:
         if len(non_null) != len(members):
             model = reduce(or_, non_null)
             nullable = True
-    return (Annotated[model, *metadata] if metadata else model), nullable
+    return (cast("TypeForm[Any]", Annotated[model, *metadata]) if metadata else model), nullable
 
 
 def generic_bindings(
     cls: type,
     owner: type,
-    bindings: dict[Any, Any] | None = None,
-) -> dict[Any, Any]:
+    bindings: dict[Any, TypeForm[Any]] | None = None,
+) -> dict[Any, TypeForm[Any]]:
     """Определить значения параметров типов по цепочке наследования до класса, определяющего метод."""
     bindings = bindings or {}
     if cls is owner:

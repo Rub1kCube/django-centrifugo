@@ -553,7 +553,7 @@ as for an RPC action. Subscription payloads are JSON objects or ``null``;
 an omitted payload is treated as ``None``. Use ``Model | None`` to accept
 both a model and no data, or annotate ``data: None`` when no payload is expected.
 Malformed JSON and non-object payloads are request errors; model validation
-failures invoke ``on_error`` with kind ``validation`` before ``on_subscribe``
+failures invoke ``on_error`` with ``PayloadValidationError`` before ``on_subscribe``
 runs. A model with required fields rejects an omitted payload. The
 :class:`~django_centrifugo.contracts.SubscribeContext` contains connection
 metadata and channel parameters, not the payload.
@@ -660,7 +660,7 @@ publication to this subscriber. SDK publications remain independent broadcasts.
 Use ``AsyncIterator[RoomEvent]`` when yielding only model instances. The
 selected backend validates dictionaries and model instances before sending;
 after subscription acceptance an output or generator error terminates the gRPC
-stream with an internal status and invokes ``on_error`` with endpoint ``stream``.
+stream with an internal status and passes the exception to ``on_error``.
 The returned proxy error cannot be sent after acceptance. Already sent events
 cannot be recalled. A generator is closed when the subscription is cancelled.
 
@@ -675,7 +675,10 @@ each generator iteration; application code should avoid holding connections
 while waiting for external events inside a generator.
 
 Custom backends implement :class:`~django_centrifugo.serialization.base.SerializationBackend`
-and have a no-argument constructor. Their ``format_validation_error`` must
+and have a no-argument constructor. Their ``annotation`` parameters use
+``TypeForm[Any]`` from ``typing_extensions`` to accept type expressions such as
+``Model``, ``Model | None``, and ``Annotated[Model, ...]``. Payloads and validated
+values use ``Any``. Their ``format_validation_error`` must
 raise ``TypeError`` for unrelated exceptions. A backend's schema generator is
 optional and is not used by RPC dispatch.
 
@@ -684,45 +687,74 @@ Error handling
 
 Override :meth:`~django_centrifugo.consumers.consumer.Consumer.on_error` to
 handle errors for a specific consumer. The hook runs on the same instance as
-the RPC or subscription method and receives an
-:class:`~django_centrifugo.errors.ErrorContext`. Its ``request`` contains the
-:class:`~django_centrifugo.contracts.RpcContext` or
-:class:`~django_centrifugo.contracts.SubscribeContext` when available.
+the RPC or subscription method and receives the original ``Exception``.
+Returning a result stops error handling at the consumer level. Raise ``error``
+to delegate to the global handler configured by ``error_handler``, or raise a
+different exception to change what the global handler receives. The default
+``on_error`` implementation raises the original exception.
+
+Return :class:`~django_centrifugo.errors.ProxyError` to send a Centrifugo protocol
+error in the response's ``error`` field. For RPC calls, any other serializable
+result is sent as JSON in ``result.data``. The client SDK sees a successful RPC
+response and application code interprets the domain error payload. Dictionaries
+with fields named ``code`` or ``message`` are still domain data; only a
+``ProxyError`` instance selects the protocol error path. Returning ``None`` sends
+JSON null in ``result.data`` and does not invoke the global handler.
 
 .. code-block:: python
 
    from django_centrifugo.consumers import Consumer
-   from django_centrifugo.errors import ErrorContext, ProxyError
+   from django_centrifugo.actions.errors import PayloadValidationError
+   from django_centrifugo.errors import ProxyError
    from django_centrifugo.plugins.msgspec.serializator import MsgspecSerializationBackend
 
    class ChatConsumer(Consumer[MsgspecSerializationBackend]):
-       async def on_error(self, error: ErrorContext) -> ProxyError | None:
-           if error.kind == "validation":
+       async def on_error(self, error: Exception):
+           if isinstance(error, InsufficientBalance):
+               return {"error": {"type": "insufficient_balance", "available": error.available}}
+           if isinstance(error, PayloadValidationError):
                return ProxyError(1400, "Invalid message")
-           return None  # Delegate other errors to the global handler.
+           raise error  # Delegate other errors to the global handler.
+
+Here ``InsufficientBalance`` is an application-defined exception. Domain results
+can be JSON-compatible values, msgspec structs, dataclasses, or models supported
+by the selected RPC serialization backend, including models nested in containers.
+They are serialized without validation against the RPC's success output model.
+The backend configured for the action, including a decorator override, is used.
 
 The hook handles failures after a consumer is selected, including RPC payload
 validation, subscription setup, stream production, and ``on_stream_end``. Authentication failures
 and errors before a consumer is selected do not invoke it. For ``on_stream_end``
 the hook can perform side effects, but its return value cannot be sent to the
-client because the stream has ended. If the hook raises or returns an invalid
-error, the server uses a safe generic internal error without invoking it again.
+client because the stream has ended. Subscription refusals require ``ProxyError``;
+a domain result during subscription setup is logged and replaced with the default
+protocol error for the original exception, so it cannot accidentally accept a
+subscription. If the global handler raises, or either handler returns an invalid
+``ProxyError`` or an unserializable RPC result, the server uses a safe generic
+internal error without invoking the handlers again.
 
-For errors not handled by a consumer, set ``error_handler`` to a synchronous
-callable or dotted import path. It
-receives :class:`~django_centrifugo.errors.ErrorContext` and must return a
-:class:`~django_centrifugo.errors.ProxyError` with a Centrifugo custom error
-code between 400 and 1999. Invalid results or exceptions fall back to a safe
-generic error. Never expose ``error.exception`` to clients.
+For errors not handled by a consumer, set ``error_handler`` to a synchronous or
+asynchronous callable or dotted import path. It receives the exception raised
+by ``on_error``, or the original exception if no consumer was selected, and
+follows the same return rules. ``None`` is sent as JSON null for RPC.
+The setting defaults to :func:`~django_centrifugo.errors.default_error_handler`,
+which maps request and validation exceptions to code 107 (bad request), unknown
+actions to 104 (method not found), unknown channels to 102, and permission
+exceptions to 103. Other exceptions use code 100 (internal server error) with
+``temporary=True``. These are the built-in
+`Centrifugo client error codes <https://centrifugal.dev/docs/server/codes#client-error-codes>`_.
+``ProxyError`` accepts built-in codes 100–113 and custom codes 400–1999.
+Codes reserved for unsubscribe or disconnect messages cannot be used here.
+Never expose arbitrary exception messages or internal details to clients.
 
 .. code-block:: python
 
-   from django_centrifugo.errors import ProxyError
+   from django_centrifugo.errors import default_error_handler
 
    def handle_centrifugo_error(error):
-       if error.kind == "unknown_action":
-           return ProxyError(1404, "Unknown method")
-       return ProxyError(1000, "Request failed")
+       if isinstance(error, InsufficientBalance):
+           return {"error": {"type": "insufficient_balance", "available": error.available}}
+       return default_error_handler(error)
 
    CENTRIFUGO_SETTINGS = {
        "proxy_key": "load-from-secret-store",

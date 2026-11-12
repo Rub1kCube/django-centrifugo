@@ -1,22 +1,24 @@
 from typing import Any, get_args
 
+from typing_extensions import TypeForm
+
 from django_centrifugo.serialization.base import SerializationBackend
 from django_centrifugo.utils.type_inspection import is_union, model_annotation
 
 
-def _output_model(annotation: Any, backend: SerializationBackend) -> Any | None:
+def _output_model(annotation: TypeForm[Any], backend: SerializationBackend) -> TypeForm[Any] | None:
     if backend.is_supported_annotation(annotation):
         return annotation
 
     if is_union(annotation):
         members = get_args(annotation)
-        models = [part for part in members if backend.is_supported_annotation(part)]
+        models: list[TypeForm[Any]] = [part for part in members if backend.is_supported_annotation(part)]
         if len(members) == 2 and len(models) == 1 and dict[str, object] in members:  # noqa: PLR2004
             return models[0]
     return None
 
 
-def _validate_output(backend: SerializationBackend, annotation: Any, result: Any) -> Any:
+def _validate_output(backend: SerializationBackend, annotation: TypeForm[Any], result: Any) -> Any:
     if result is None and model_annotation(annotation)[1]:
         backend.validate(annotation, None)
         return None

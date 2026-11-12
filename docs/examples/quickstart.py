@@ -1,7 +1,6 @@
 """A single-file Django application with a Centrifugo RPC and stream."""
 
 import asyncio
-import logging
 import secrets
 import sys
 from collections.abc import AsyncIterator
@@ -14,13 +13,12 @@ from django.core.management import execute_from_command_line
 from django.http import HttpRequest, HttpResponse
 from django.urls import path
 
+from django_centrifugo.actions.errors import PayloadValidationError
 from django_centrifugo.consumers import Consumer, rpc, stream
 from django_centrifugo.contracts import RpcContext, SubscribeContext
-from django_centrifugo.errors import ErrorContext, ProxyError
+from django_centrifugo.errors import ProxyError
 from django_centrifugo.plugins.msgspec.serializator import MsgspecSerializationBackend
 
-
-logger = logging.getLogger(__name__)
 
 settings.configure(
     SECRET_KEY=secrets.token_urlsafe(32),
@@ -59,13 +57,10 @@ class GreetingConsumer(Consumer[MsgspecSerializationBackend]):
     channel = "chat:room.<int:room_id>"
 
     @override
-    async def on_error(self, error: ErrorContext) -> ProxyError | None:
-        if error.kind == "validation":
+    async def on_error(self, error: Exception) -> ProxyError:
+        if isinstance(error, PayloadValidationError):
             return ProxyError(1400, "Invalid request data")
-        if error.kind == "internal":
-            logger.error("Centrifugo %s failed", error.endpoint, exc_info=error.exception)
-            return ProxyError(1500, "An unexpected error occurred", temporary=True)
-        return None
+        raise error
 
     @override
     async def on_subscribe(self, data: Subscription, context: SubscribeContext) -> dict[str, int | str]:

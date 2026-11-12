@@ -150,8 +150,8 @@ the requested language, and a sequence number. The subscription remains open
 after the final event until the browser disconnects. Stop each process with
 Ctrl+C when finished.
 
-The consumer's ``on_error`` hook returns a client-safe error object for invalid
-payloads and unexpected errors, and logs the details of unexpected exceptions.
+The consumer's ``on_error`` hook returns a client-safe protocol error for invalid
+payloads and raises other exceptions to delegate to the global error handler.
 Errors during RPC or subscription setup can be sent to the client. If the
 generator fails after the subscription has been accepted, the stream ends and
 the hook's returned object cannot be delivered as a publication. See
