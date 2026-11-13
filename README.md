@@ -105,6 +105,15 @@ from django_centrifugo.shortcuts import apublish
 await apublish("announcements:all", {"message": "Hello!"})
 ```
 
+Send the same message to several channels with `broadcast` or `abroadcast`:
+
+```python
+from django_centrifugo.shortcuts import abroadcast, broadcast
+
+broadcast(["user:1", "user:2"], {"message": "Hello!"})
+await abroadcast(["user:1", "user:2"], {"message": "Hello!"})
+```
+
 Use `create_client()` or `create_async_client()` from `django_centrifugo.clients`
 to reuse a native [pycent](https://github.com/centrifugal/pycent) client across calls.
 Results and exceptions come directly from `cent`. See the [usage guide](docs/pages/usage.rst). Client access to channels must be

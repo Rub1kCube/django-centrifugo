@@ -50,6 +50,25 @@ publication options, including JSON or base64 payloads, tags, idempotency keys,
 and a per-call timeout. Results are native ``cent.PublishResult`` objects.
 Payload handling, validation, and exceptions follow pycent.
 
+To send the same publication to multiple channels, use
+:func:`~django_centrifugo.shortcuts.broadcast` or
+:func:`~django_centrifugo.shortcuts.abroadcast`:
+
+.. code-block:: python
+
+   from django_centrifugo.shortcuts import abroadcast, broadcast
+
+   result = broadcast(["user:1", "user:2"], {"text": "Hello!"})
+
+   async def notify_users():
+       return await abroadcast(["user:1", "user:2"], {"text": "Hello!"}, timeout=2.0)
+
+These shortcuts accept the same publication options and manage their clients
+in the same way. They return native ``cent.BroadcastResult`` objects with an
+outcome for each channel. If any channel fails, pycent raises
+``cent.BroadcastFailedChannelsError`` with the complete result; broadcasts are
+not atomic.
+
 Reusing a client
 ----------------
 
